@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: task_manager
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d task_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:password@db:5432/task_manager
+      REDIS_URL: redis://redis:6379/0
+      FLASK_APP: run.py
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    command: ["gunicorn", "-b", "0.0.0.0:5000", "run:app"]
+
+  worker:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:password@db:5432/task_manager
+      REDIS_URL: redis://redis:6379/0
+      FLASK_APP: run.py
+      SKIP_DB_MIGRATIONS: "1"
+    command: ["python", "worker.py"]
+
+volumes:
+  postgres_data:
