@@ -1,6 +1,7 @@
 from marshmallow import ValidationError
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Category, Task
@@ -34,29 +35,25 @@ def list_categories():
 
 @categories_bp.get("/categories/<int:category_id>")
 def get_category(category_id: int):
-    category = db.session.get(Category, category_id)
-    if category is None:
-        return jsonify({"error": "Category not found"}), 404
-
-    tasks = (
+    # Load category and its tasks in one query to avoid lazy-loading issues
+    result = (
         db.session.execute(
-            select(Task).where(Task.category_id == category.id).order_by(Task.id.asc())
+            select(Category).options(joinedload(Category.tasks)).where(Category.id == category_id)
         )
         .scalars()
-        .all()
+        .first()
     )
+
+    category = result
+    if category is None:
+        return jsonify({"error": "Category not found"}), 404
 
     response = {
         "id": category.id,
         "name": category.name,
         "color": category.color,
         "tasks": [
-            {
-                "id": task.id,
-                "title": task.title,
-                "completed": task.completed,
-            }
-            for task in tasks
+            {"id": t.id, "title": t.title, "completed": t.completed} for t in sorted(category.tasks, key=lambda x: x.id)
         ],
     }
     return jsonify(response), 200
